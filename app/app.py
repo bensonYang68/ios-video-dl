@@ -20,11 +20,16 @@ jobs = {}
 lock = threading.Lock()
 
 
+# 站点 -> cookie 文件名（/data/cookies/<名>.txt，Netscape 格式）；x.com 和 twitter.com 共用 twitter.txt
+COOKIE_FILES = {"x.com": "twitter", "twitter.com": "twitter", "youtube.com": "youtube",
+                "instagram.com": "instagram", "tiktok.com": "tiktok", "bilibili.com": "bilibili"}
+
+
 def cookie_args(url):
     host = urllib.parse.urlparse(url).hostname or ""
-    for name in ("x.com", "twitter.com", "douyin.com", "youtube.com", "instagram.com", "tiktok.com", "bilibili.com"):
-        if host == name or host.endswith("." + name):
-            path = os.path.join(COOKIES_DIR, name.split(".")[0] + ".txt")
+    for domain, name in COOKIE_FILES.items():
+        if host == domain or host.endswith("." + domain):
+            path = os.path.join(COOKIES_DIR, name + ".txt")
             if os.path.exists(path):
                 return ["--cookies", path]
     return []

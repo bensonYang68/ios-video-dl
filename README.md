@@ -114,6 +114,15 @@ iPhone 快捷指令 ──POST 链接──▶ /随机路径/api（需带 X-Toke
 **快捷指令提示「下载失败」**
 弹窗里就是服务器返回的原因。可以在服务器上执行 `vdlctl test <同一个链接>` 复现问题。网站改版导致 yt-dlp 失效时，执行 `vdlctl restart` 就会自动升级 yt-dlp。
 
+**推特报「No video could be found in this tweet」**
+如果推文确实有视频，一般是因为它被标成了敏感内容，或者只有登录用户才能看，服务器以游客身份拿不到。解决办法是给服务器放一份推特 cookie（**建议用小号**）：在电脑浏览器登录 x.com，按 F12 → Application → Cookies，复制 `auth_token` 和 `ct0` 两个值，然后在服务器上执行（把中文换成对应的值）：
+
+```bash
+printf '# Netscape HTTP Cookie File\n.x.com\tTRUE\t/\tTRUE\t2000000000\tauth_token\t%s\n.x.com\tTRUE\t/\tTRUE\t2000000000\tct0\t%s\n' '粘贴auth_token' '粘贴ct0' > /opt/ios-video-dl/data/cookies/twitter.txt && chmod 600 /opt/ios-video-dl/data/cookies/twitter.txt
+```
+
+另外，还要在 X 的设置里打开「显示可能包含敏感内容的媒体」。其他需要登录的网站同理：cookie 按 Netscape 格式保存到 `data/cookies/<站点>.txt`，支持 `twitter`、`youtube`、`instagram`、`tiktok`、`bilibili`。
+
 **下载成功，但存不进相册**
 一般是编码不兼容。服务器会自动转码；如果还是不行，请提 issue，并附上链接。
 
