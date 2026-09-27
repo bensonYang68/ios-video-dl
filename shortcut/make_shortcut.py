@@ -97,7 +97,8 @@ act("alert", WFAlertActionTitle="提交失败", WFAlertActionCancelButtonShown=F
 act("exit")
 ctrl("conditional", 2, g)
 
-act("notification", WFNotificationActionBody="📥 已提交，服务器下载中…")
+u_pmsg = act("getvalueforkey", WFInput=attach(out(u_d1, "词典")), WFGetDictionaryValueType="Value", WFDictionaryKey="msg")
+act("notification", WFNotificationActionBody=text(OBJ, {0: out(u_pmsg, "词典值")}))
 
 # 2. 轮询（最多约 5 分钟）
 g_rep = uid()
@@ -108,6 +109,13 @@ u_get = act("downloadurl", WFURL=text(OBJ + "/api?id=" + OBJ, {0: var("server"),
 u_d2 = act("detect.dictionary", WFInput=attach(out(u_get, "URL的内容")))
 u_st = act("getvalueforkey", WFInput=attach(out(u_d2, "词典")), WFGetDictionaryValueType="Value", WFDictionaryKey="status")
 act("setvariable", WFInput=attach(out(u_st, "词典值")), WFVariableName="status")
+# 服务器只在 25/50/75%、换阶段、下完时给 notify，取走即清空，所以不会刷屏
+u_nt = act("getvalueforkey", WFInput=attach(out(u_d2, "词典")), WFGetDictionaryValueType="Value", WFDictionaryKey="notify")
+act("setvariable", WFInput=attach(out(u_nt, "词典值")), WFVariableName="notify")
+g_nt = uid()
+ctrl("conditional", 0, g_nt, WFCondition=100, WFInput={"Type": "Variable", "Variable": attach(var("notify"))})
+act("notification", WFNotificationActionBody=text(OBJ, {0: var("notify")}))
+ctrl("conditional", 2, g_nt)
 
 g_done = uid()
 if_contains(var("status"), "done", g_done)
