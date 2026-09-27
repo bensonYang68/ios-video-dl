@@ -1,0 +1,12 @@
+# 抖音模块：让 vdl 加入 Douyin_TikTok_Download_API v5 的网络，调用 dtk-api-1:8000
+services:
+  vdl:
+    environment:
+      DTK_API_URL: http://dtk-api-1:8000
+    networks:
+      - default
+      - dtk_edge
+
+networks:
+  dtk_edge:
+    external: true

@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# ios-video-dl 管理命令（install.sh 会链接到 /usr/local/bin/vdlctl）
+set -euo pipefail
+
+DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+DTK_DIR="${DTK_DIR:-/opt/dtk}"
+ENV_FILE="$DIR/.env"
+cd "$DIR"
+
+env_get() { grep -E "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2- || true; }
+env_set() {  # env_set KEY VALUE
+  if grep -qE "^$1=" "$ENV_FILE"; then sed -i "s|^$1=.*|$1=$2|" "$ENV_FILE"; else echo "$1=$2" >> "$ENV_FILE"; fi
+}
+dtk() { (cd "$DTK_DIR/repo" && COMPOSE_ENV_FILES=.env docker compose -p dtk -f docker/compose.yml -f compose.host.yml "$@"); }
+
+[ -f "$ENV_FILE" ] || { echo "没找到 $ENV_FILE，请先运行 install.sh"; exit 1; }
+PORT="$(env_get VDL_PORT)"; PORT="${PORT:-8090}"
+
+cmd_info() {
+  echo "服务器地址：https://$(env_get DOMAIN)/$(env_get VDL_PATH)"
+  echo "密钥：      $(env_get VDL_TOKEN)"
+  echo "模式：      $(env_get VDL_MODE)    抖音模块：$([ -n "$(env_get DTK_API_KEY)" ] && echo 已配置 || echo 未配置)"
+}
+
+cmd_test() {  # 在服务器本机完整走一遍：提交 -> 轮询 -> 下载文件
+  [ $# -ge 1 ] || { echo "用法：vdlctl test <链接或分享文字>"; exit 1; }
+  local tok base id s
+  tok="$(env_get VDL_TOKEN)"; base="http://127.0.0.1:$PORT/api"
+  id=$(curl -fsS -H "X-Token: $tok" --data-urlencode "text=$1" "$base" |
+       python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("id") or "ERR "+d.get("msg",""))')
+  case "$id" in ERR*) echo "提交失败：${id#ERR }"; exit 1;; esac
+  echo "任务：$id"
+  for _ in $(seq 1 150); do
+    s=$(curl -fsS -H "X-Token: $tok" "$base?id=$id")
+    echo "$s" | grep -q '"running"' || break; sleep 2
+  done
+  echo "$s" | python3 -c '
+import sys,json
+d=json.load(sys.stdin); print("状态：", d.get("status"), d.get("msg",""))
+for u in d.get("files", []): print("文件：", u)'
+}
+
+cmd_douyin_key() {
+  [ $# -ge 1 ] || { echo "用法：vdlctl douyin-key <在抖音解析控制台创建的 API Key>"; exit 1; }
+  env_set DTK_API_KEY "$1"
+  env_set COMPOSE_FILE "docker-compose.yml:compose.douyin.yml"
+  docker compose up -d >/dev/null && echo "已保存并重启，抖音链接现在走抖音解析服务"
+}
+
+cmd_douyin_guide() {
+  cat <<EOF
+抖音模块配置（只需一次；cookie 过期后重复第 3 步）：
+
+1. 在你自己的电脑上开端口转发（保持窗口开着）：
+     ssh -N -L 8000:127.0.0.1:8000 root@<服务器IP>
+2. 取初始化链接，在电脑浏览器打开，创建管理员账号：
+     vdlctl douyin-setup-url
+3. 登录控制台 →「身份池」→「导入」：
+   - 粘贴浏览器里 douyin.com 的 cookie（F12 → Network → 任一请求 → Request Headers → cookie）
+   - User agent 填同一个浏览器的 UA（控制台里执行 navigator.userAgent）
+   - 如果报版本差太大（drift），把 UA 里的 Chrome/xxx 改成控制台提示的版本号，例如 Chrome/149.0.0.0
+   - 建议用小号的 cookie：它等同于账号密码
+4. 控制台 →「API Keys」→ 新建，权限只勾 douyin:read（需要 TikTok 也可勾 tiktok:read）
+5. 回到服务器执行：
+     vdlctl douyin-key <刚创建的 key>
+EOF
+}
+
+cmd_douyin_setup_url() {
+  docker logs dtk-api-1 2>&1 | grep -A1 "Open this URL" | tail -1 | sed 's/^ *//' ||
+    echo "没找到初始化链接：可能已经创建过管理员，或服务还没启动（vdlctl status）"
+}
+
+cmd_status() {
+  docker compose ps --format "table {{.Service}}\t{{.Status}}"
+  [ -d "$DTK_DIR/repo" ] && { echo; echo "抖音解析服务："; dtk ps --format "table {{.Service}}\t{{.Status}}"; }
+  echo; df -h / | tail -1 | awk '{print "硬盘剩余：" $4}'
+}
+
+cmd_update() {
+  git pull -q --ff-only && docker compose up -d --build >/dev/null && echo "下载服务已更新（yt-dlp 每次启动也会自动升级）"
+  if [ -d "$DTK_DIR/repo" ]; then
+    echo "抖音解析服务当前版本：$(grep ^DTK_IMAGE_TAG= "$DTK_DIR/repo/.env" | cut -d= -f2)"
+    echo "如需升级：编辑 $DTK_DIR/repo/.env 里的 DTK_IMAGE_TAG，再执行 vdlctl dtk up -d"
+  fi
+}
+
+cmd_uninstall() {
+  read -r -p "删除下载服务（容器、下载缓存、$DIR/.env）？(y/n) " a < /dev/tty
+  [[ "$a" =~ ^[Yy] ]] || exit 0
+  docker compose down --rmi local -v
+  rm -f /usr/local/bin/vdlctl /etc/nginx/snippets/ios-video-dl.conf "$ENV_FILE"
+  rm -rf "$DIR/data"
+  if [ -d "$DTK_DIR/repo" ]; then
+    read -r -p "同时删除抖音解析服务和它的数据库（含导入的 cookie）？(y/n) " a < /dev/tty
+    [[ "$a" =~ ^[Yy] ]] && { dtk down -v; rm -rf "$DTK_DIR"; }
+  fi
+  echo "已卸载。nginx 模式记得删掉 server 块里的 include 行；代码目录 $DIR 可手动删除"
+}
+
+case "${1:-help}" in
+  info) cmd_info ;;
+  test) shift; cmd_test "$@" ;;
+  logs) docker compose logs --tail 100 -f vdl ;;
+  restart) docker compose restart ;;
+  status) cmd_status ;;
+  update) cmd_update ;;
+  douyin-key) shift; cmd_douyin_key "$@" ;;
+  douyin-guide) cmd_douyin_guide ;;
+  douyin-setup-url) cmd_douyin_setup_url ;;
+  dtk) shift; dtk "$@" ;;
+  uninstall) cmd_uninstall ;;
+  *) cat <<EOF
+用法：vdlctl <命令>
+  info               显示快捷指令要填的服务器地址和密钥
+  test <链接>        在服务器上测试下载
+  status             查看服务状态和硬盘
+  logs / restart     日志 / 重启
+  update             更新代码并重建
+  douyin-guide       抖音模块配置步骤
+  douyin-setup-url   抖音解析控制台的初始化链接
+  douyin-key <key>   设置抖音解析的 API Key
+  dtk <compose参数>  直接管理抖音解析服务，例如 vdlctl dtk logs api
+  uninstall          卸载
+EOF
+  ;;
+esac

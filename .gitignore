@@ -1,0 +1,4 @@
+.env
+data/
+*.shortcut.unsigned
+__pycache__/

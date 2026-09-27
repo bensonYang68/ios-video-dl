@@ -1,0 +1,13 @@
+# DOMAIN、VDL_PATH 来自 .env（install.sh 生成）
+{$DOMAIN} {
+	handle /{$VDL_PATH}/api {
+		reverse_proxy vdl:8090
+	}
+	handle_path /{$VDL_PATH}/f/* {
+		root * /srv/files
+		file_server
+	}
+	handle {
+		respond 404
+	}
+}

@@ -1,0 +1,32 @@
+# 由 install.sh 生成 .env；.env 里的 COMPOSE_FILE / COMPOSE_PROFILES 决定是否启用 Caddy 和抖音模块
+services:
+  vdl:
+    build: ./app
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:${VDL_PORT:-8090}:8090"   # 只给本机的 nginx 用；Caddy 走容器内部网络
+    volumes:
+      - ./data:/data
+    mem_limit: 768m
+
+  # 自带 HTTPS（自动申请 Let's Encrypt 证书），需要 80/443 端口空闲、域名已解析到本机
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["caddy"]
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/files:/srv/files:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - vdl
+
+volumes:
+  caddy-data:
+  caddy-config:
