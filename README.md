@@ -105,7 +105,7 @@ iPhone 快捷指令 ──POST 链接──▶ /随机路径/api（需带 X-Toke
 快捷指令下载 /随机路径/f/... 的文件 → 存到相册
 ```
 
-- 服务只接受带正确密钥的请求；下载好的文件放在随机路径下，**1 小时后自动删除**
+- 服务只接受带正确密钥的请求；下载好的文件放在随机路径下，**默认 1 小时后自动删除**。硬盘小的话可以改短，比如 15 分钟：在 `.env` 里加一行 `VDL_KEEP_MINUTES=15`，然后执行 `vdlctl restart`
 - 服务端是一个只依赖 Python 标准库的小程序：[`app/app.py`](app/app.py)
 - 快捷指令由 [`shortcut/make_shortcut.py`](shortcut/make_shortcut.py) 生成，在 macOS 上用 `shortcuts sign` 签名
 

@@ -3,7 +3,7 @@
 
 POST /api        form/json: text=<分享文本或链接>   -> {"code":200,"id":"..."}
 GET  /api?id=... -> {"code":200,"status":"running|done|error","files":[url...],"msg":"..."}
-请求需带请求头 X-Token。文件由 nginx 直接从 FILES_DIR 提供，1 小时后自动删除。
+请求需带请求头 X-Token。文件由 nginx 直接从 FILES_DIR 提供，VDL_KEEP_MINUTES（默认 60）分钟后自动删除。
 """
 import json, os, re, secrets, shutil, subprocess, threading, time, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,7 +12,7 @@ TOKEN = os.environ["VDL_TOKEN"]
 PUBLIC_BASE = os.environ["VDL_PUBLIC_BASE"].rstrip("/")  # 例如 https://example.com/<随机路径>/f
 FILES_DIR = "/data/files"
 COOKIES_DIR = "/data/cookies"
-KEEP_SECONDS = 3600
+KEEP_SECONDS = int(os.environ.get("VDL_KEEP_MINUTES", "60")) * 60  # 下载文件保留多久（分钟），过期自动删除
 URL_RE = re.compile(r"https?://[^\s<>\"'，。！？、]+")
 MEDIA_EXT = {".mp4", ".mov", ".m4v", ".webm", ".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
@@ -193,7 +193,7 @@ def cleaner():
         with lock:
             for k in [k for k, v in jobs.items() if now - v["t"] > KEEP_SECONDS]:
                 jobs.pop(k)
-        time.sleep(300)
+        time.sleep(min(300, max(60, KEEP_SECONDS // 6)))  # 检查间隔：保留时长的 1/6，1～5 分钟
 
 
 class Handler(BaseHTTPRequestHandler):
