@@ -59,8 +59,18 @@ def url_key(url):
 
 # ---------- 进度 ----------
 
+def progress_step(total):
+    """按文件大小决定每隔多少 % 提醒一次：>500MB 每 10%，<250MB 只在 50%，中间每 25%（大小未知也按 25%）"""
+    mb = total / 1e6 if total else 0
+    if mb > 500:
+        return 10
+    if 0 < mb < 250:
+        return 50
+    return 25
+
+
 def set_progress(job_id, stage, pct=None, done=0, total=0, milestones=True):
-    """更新进度文字；到 25/50/75% 或进入新阶段时留一条 notify，快捷指令取走后清空（避免通知刷屏）"""
+    """更新进度文字；到提醒档位（见 progress_step）或进入新阶段时留一条 notify，快捷指令取走后清空（避免刷屏）"""
     text = stage
     if pct is not None:
         pct = max(0, min(100, int(pct)))
@@ -76,9 +86,10 @@ def set_progress(job_id, stage, pct=None, done=0, total=0, milestones=True):
             job["progress"] = pct
         if not milestones:
             return
-        mark = (stage, pct // 25 * 25 if pct is not None else -1)
-        if pct is not None and (pct < 25 or pct >= 100):
-            return  # 0% 和 100% 不单独提醒：开头有「已提交」，结尾有「服务器已下完」
+        step = progress_step(total)
+        mark = (stage, pct // step * step if pct is not None else -1)
+        if pct is not None and (pct < step or pct >= 100):
+            return  # 第一档之前和 100% 不单独提醒：开头有「已提交」，结尾有「服务器已下完」
         if mark != job.get("_mark"):
             job["_mark"] = mark
             job["notify"] = text
